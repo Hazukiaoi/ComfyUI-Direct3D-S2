@@ -94,6 +94,32 @@ class Direct3DS2Pipeline(object):
         self.models_are_offloaded = True
         print("Direct3DS2Pipeline models moved to CPU.")
 
+    def _offload_sparse_512_models_to_cpu(self):
+        print("Offloading sparse 512 models (VAE & DiT) to CPU.")
+        if self.sparse_vae_512 is not None:
+            self.sparse_vae_512.to('cpu')
+        if self.sparse_dit_512 is not None:
+            self.sparse_dit_512.to('cpu')
+
+    def _ensure_sparse_models_on_device(self, stage_resolution, target_device):
+        print(f"Ensuring sparse models for stage {stage_resolution} are on device: {target_device}")
+        if self.sparse_image_encoder is not None:
+            if next(self.sparse_image_encoder.parameters()).device != target_device:
+                 self.sparse_image_encoder.to(target_device)
+
+        if stage_resolution == 512:
+            if self.sparse_vae_512 is not None and next(self.sparse_vae_512.parameters()).device != target_device:
+                self.sparse_vae_512.to(target_device)
+            if self.sparse_dit_512 is not None and next(self.sparse_dit_512.parameters()).device != target_device:
+                self.sparse_dit_512.to(target_device)
+        elif stage_resolution == 1024:
+            if self.sparse_vae_1024 is not None and next(self.sparse_vae_1024.parameters()).device != target_device:
+                self.sparse_vae_1024.to(target_device)
+            if self.sparse_dit_1024 is not None and next(self.sparse_dit_1024.parameters()).device != target_device:
+                self.sparse_dit_1024.to(target_device)
+        else:
+            print(f"Warning: _ensure_sparse_models_on_device called with unknown stage_resolution: {stage_resolution}")
+
     @classmethod
     def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1", birefnet_model_path=None):
         
@@ -343,14 +369,25 @@ class Direct3DS2Pipeline(object):
         simplify_ratio: float = 0.95,
         mc_threshold: float = 0.2):
 
-        image = self.prepare_image(image)
+        # Ensure all models are on the configured execution device at the start of a full pass
+        print(f"Direct3DS2Pipeline __call__: Ensuring all models are on device: {self.device}")
+        self.to(self.device)
+
+        image = self.prepare_image(image) # image tensor is now on self.device
         
+        # Dense Stage
+        print("Direct3DS2Pipeline __call__: Starting dense stage.")
         latent_index = self.inference(image, self.dense_vae, self.dense_dit, self.dense_image_encoder,
                                     self.dense_scheduler, generator=generator, mode='dense', mc_threshold=0.1, **dense_sampler_params)[0]
         
         latent_index = sort_block(latent_index, self.sparse_dit_512.selection_block_size)
 
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Sparse 512 Stage
+        print("Direct3DS2Pipeline __call__: Starting sparse 512 stage.")
+        self._ensure_sparse_models_on_device(512, self.device)
 
         if sdf_resolution == 512:
             remove_interior = False
@@ -364,12 +401,22 @@ class Direct3DS2Pipeline(object):
                                 remove_interior=remove_interior, **sparse_512_sampler_params)[0]
 
         if sdf_resolution == 1024:
+            print("Direct3DS2Pipeline __call__: Offloading sparse 512 models for 1024 stage.")
+            self._offload_sparse_512_models_to_cpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             del latent_index
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             mesh = normalize_mesh(mesh)
             latent_index = mesh2index(mesh, size=1024, factor=8)
             latent_index = sort_block(latent_index, self.sparse_dit_1024.selection_block_size)
-            print(f"number of latent tokens: {len(latent_index)}")
+            print(f"Direct3DS2Pipeline __call__: Number of latent tokens for 1024 stage: {len(latent_index)}")
+
+            print("Direct3DS2Pipeline __call__: Starting sparse 1024 stage.")
+            self._ensure_sparse_models_on_device(1024, self.device)
 
             mesh = self.inference(image, self.sparse_vae_1024, self.sparse_dit_1024, 
                                 self.sparse_image_encoder, self.sparse_scheduler_1024, 
@@ -390,6 +437,6 @@ class Direct3DS2Pipeline(object):
             mesh = trimesh.Trimesh(filled_mesh[0], filled_mesh[1])
 
         outputs = {"mesh": mesh}
-
+        print("Direct3DS2Pipeline __call__: Processing complete.")
         return outputs
         
