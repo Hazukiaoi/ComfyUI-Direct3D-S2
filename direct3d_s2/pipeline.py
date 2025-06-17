@@ -288,9 +288,8 @@ class Direct3DS2Pipeline(object):
             if not self.birefnet_model_path:
                 raise ValueError("Input image is not RGBA and no BiRefNet model path was provided. Please specify it in the LoadDirect3DS2Model node.")
             if self.birefnet_instance is None or \
-               self.birefnet_instance.model_path != self.birefnet_model_path or \
-               (hasattr(self.birefnet_instance, 'precision_str') and self.birefnet_instance.precision_str != self.precision_str): # Re-init if precision changed
-                self.birefnet_instance = BiRefNet(self.device, model_path=self.birefnet_model_path, precision_str=self.precision_str)
+               self.birefnet_instance.model_path != self.birefnet_model_path: # Re-init if path changed
+                self.birefnet_instance = BiRefNet(self.device, model_path=self.birefnet_model_path)
 
             image_np = self.birefnet_instance.run(image)
             image = preprocess_image(image_np)
