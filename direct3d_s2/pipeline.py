@@ -34,7 +34,7 @@ class Direct3DS2Pipeline(object):
                  dense_scheduler,
                  sparse_scheduler_512,
                  sparse_scheduler_1024,
-                 dtype=torch.float16,
+                 # dtype parameter removed
                  birefnet_model_path=None,
         ):
         self.dense_vae = dense_vae
@@ -49,11 +49,76 @@ class Direct3DS2Pipeline(object):
         self.dense_scheduler = dense_scheduler
         self.sparse_scheduler_512 = sparse_scheduler_512
         self.sparse_scheduler_1024 = sparse_scheduler_1024
-        self.dtype = dtype
+        self.dtype = torch.float32 # Default, will be changed by convert_model_precision
+        self.precision_str = "fp32" # Default
         self.birefnet_model_path = birefnet_model_path
         self.birefnet_instance = None
         self.models_are_offloaded = False
-    
+
+    def convert_model_precision(self, precision_str: str):
+        print(f"Direct3DS2Pipeline: Converting models to precision: {precision_str}")
+        self.precision_str = precision_str
+
+        target_dtype = None
+        conversion_fn = None
+
+        if precision_str == "fp32":
+            target_dtype = torch.float32
+            conversion_fn = lambda model: model.float()
+        elif precision_str == "fp16":
+            target_dtype = torch.float16
+            conversion_fn = lambda model: model.half()
+        elif precision_str == "bf16":
+            if hasattr(torch.cuda, 'is_bf16_supported') and torch.cuda.is_bf16_supported():
+                target_dtype = torch.bfloat16
+                conversion_fn = lambda model: model.bfloat16()
+            else:
+                print("Warning: BF16 is not supported on this device. Falling back to FP32.")
+                self.precision_str = "fp32"
+                target_dtype = torch.float32
+                conversion_fn = lambda model: model.float()
+        elif precision_str == "fp8_e4m3fn":
+            if hasattr(torch, 'float8_e4m3fn'):
+                try:
+                    _ = torch.randn(1).to(torch.float8_e4m3fn)
+                    target_dtype = torch.float8_e4m3fn
+                    conversion_fn = lambda model: model.to(torch.float8_e4m3fn)
+                    print("Attempting FP8 (e4m3fn) conversion. This is experimental.")
+                except Exception as e:
+                    print(f"Warning: FP8 (e4m3fn) conversion test failed ({e}). Falling back to FP16.")
+                    self.precision_str = "fp16"
+                    target_dtype = torch.float16
+                    conversion_fn = lambda model: model.half()
+            else:
+                print("Warning: FP8 (e4m3fn) is not defined in torch. Falling back to FP16.")
+                self.precision_str = "fp16"
+                target_dtype = torch.float16
+                conversion_fn = lambda model: model.half()
+        else:
+            print(f"Warning: Unknown precision string '{precision_str}'. Defaulting to FP32.")
+            self.precision_str = "fp32"
+            target_dtype = torch.float32
+            conversion_fn = lambda model: model.float()
+
+        self.dtype = target_dtype
+
+        models_to_convert = [
+            self.dense_vae, self.dense_dit,
+            self.sparse_vae_512, self.sparse_dit_512,
+            self.sparse_vae_1024, self.sparse_dit_1024,
+            self.refiner,
+            self.dense_image_encoder, self.sparse_image_encoder
+        ]
+
+        for model_component in models_to_convert:
+            if model_component is not None:
+                try:
+                    conversion_fn(model_component)
+                except Exception as e:
+                    print(f"Error converting model component {type(model_component).__name__} to {self.precision_str}: {e}. Skipping this component.")
+
+        print(f"Direct3DS2Pipeline: Models converted. Main dtype set to {self.dtype}")
+
     def to(self, device):
         target_device = torch.device(device)
         self.device = target_device
@@ -223,8 +288,9 @@ class Direct3DS2Pipeline(object):
             if not self.birefnet_model_path:
                 raise ValueError("Input image is not RGBA and no BiRefNet model path was provided. Please specify it in the LoadDirect3DS2Model node.")
             if self.birefnet_instance is None or \
-               self.birefnet_instance.model_path != self.birefnet_model_path:
-                self.birefnet_instance = BiRefNet(self.device, model_path=self.birefnet_model_path)
+               self.birefnet_instance.model_path != self.birefnet_model_path or \
+               (hasattr(self.birefnet_instance, 'precision_str') and self.birefnet_instance.precision_str != self.precision_str): # Re-init if precision changed
+                self.birefnet_instance = BiRefNet(self.device, model_path=self.birefnet_model_path, precision_str=self.precision_str)
 
             image_np = self.birefnet_instance.run(image)
             image = preprocess_image(image_np)

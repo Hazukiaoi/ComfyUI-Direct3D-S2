@@ -5,9 +5,10 @@ from PIL import Image
 
 
 class BiRefNet(object):
-    def __init__(self, device, model_path=None):
+    def __init__(self, device, model_path=None, precision_str="fp32"):
         self.device = device
         self.model_path = model_path
+        self.precision_str = precision_str
         self.birefnet_model = None
 
     def _load_model(self):
@@ -22,6 +23,43 @@ class BiRefNet(object):
             trust_remote_code=True,
         ).to(self.device)
         self.birefnet_model.eval()
+
+        print(f"BiRefNet: Converting BiRefNet model to precision: {self.precision_str}")
+        original_precision_str_for_birefnet = self.precision_str
+
+        if self.precision_str == "fp32":
+            self.birefnet_model.float()
+        elif self.precision_str == "fp16":
+            self.birefnet_model.half()
+        elif self.precision_str == "bf16":
+            if hasattr(torch.cuda, 'is_bf16_supported') and torch.cuda.is_bf16_supported():
+                self.birefnet_model.bfloat16()
+            else:
+                print(f"Warning (BiRefNet): BF16 not supported. Falling back to FP16 for BiRefNet model.")
+                self.birefnet_model.half()
+        elif self.precision_str == "fp8_e4m3fn":
+            if hasattr(torch, 'float8_e4m3fn'):
+                try:
+                    self.birefnet_model.to(torch.float8_e4m3fn)
+                    print("BiRefNet: BiRefNet model converted to FP8 (e4m3fn). This is experimental.")
+                except Exception as e:
+                    print(f"Warning (BiRefNet): FP8 (e4m3fn) conversion failed for BiRefNet model ({e}). Falling back to FP16.")
+                    self.birefnet_model.half()
+            else:
+                print(f"Warning (BiRefNet): FP8 (e4m3fn) not defined in torch. Falling back to FP16 for BiRefNet model.")
+                self.birefnet_model.half()
+        else:
+            print(f"Warning (BiRefNet): Unknown precision '{self.precision_str}' for BiRefNet. Model defaulting to FP32.")
+            self.birefnet_model.float()
+
+        try:
+            # Check the dtype of the first parameter to confirm conversion
+            # This assumes the model has parameters and is not empty
+            first_param_dtype = next(self.birefnet_model.parameters()).dtype
+            print(f"BiRefNet: BiRefNet model precision conversion attempted for '{original_precision_str_for_birefnet}'. Resulting model dtype (first param): {first_param_dtype}")
+        except StopIteration:
+            print(f"BiRefNet: BiRefNet model has no parameters to check dtype after conversion attempt for '{original_precision_str_for_birefnet}'.")
+
 
     def run(self, image_arg):
         self._load_model()
