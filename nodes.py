@@ -79,6 +79,8 @@ class Direct3DS2:
 
 
 class SaveDirect3DS2Mesh:
+    OUTPUT_NODE = True
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
