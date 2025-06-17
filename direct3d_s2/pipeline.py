@@ -306,10 +306,14 @@ class Direct3DS2Pipeline(object):
     
     def encode_image(self, image: torch.Tensor, conditioner: Any, 
                      do_classifier_free_guidance: bool = True, use_mask: bool = False):
+
+        input_image_data = image[:, :3].to(dtype=self.dtype)
+
         if use_mask:
-            cond = conditioner(image[:, :3], image[:, 3:])
+            input_mask_data = image[:, 3:].to(dtype=self.dtype)
+            cond = conditioner(input_image_data, input_mask_data)
         else:
-            cond = conditioner(image[:, :3])
+            cond = conditioner(input_image_data)
 
         if isinstance(cond, tuple):
             cond, cond_mask = cond
