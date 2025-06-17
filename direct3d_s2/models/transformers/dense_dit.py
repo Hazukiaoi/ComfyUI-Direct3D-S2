@@ -22,7 +22,7 @@ class TimestepEmbedder(nn.Module):
         self.frequency_embedding_size = frequency_embedding_size
 
     @staticmethod
-    def timestep_embedding(t, dim, max_period=10000):
+    def timestep_embedding(t, dim, max_period=10000, dtype=None): # Added dtype
         """
         Create sinusoidal timestep embeddings.
 
@@ -37,19 +37,48 @@ class TimestepEmbedder(nn.Module):
         """
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
+        freqs_dtype = dtype if dtype is not None else torch.float32
         freqs = torch.exp(
-            -np.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+            -np.log(max_period) * torch.arange(start=0, end=half, dtype=freqs_dtype) / half
         ).to(device=t.device)
-        args = t[:, None].float() * freqs[None]
+
+        args_t_dtype = dtype if dtype is not None else t.dtype # Use provided dtype, else original t.dtype
+        args = t[:, None].to(args_t_dtype) * freqs[None] # Cast t to target dtype for multiplication
+
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+            # Ensure the padding matches the embedding's dtype
+            padding_dtype = embedding.dtype
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1], dtype=padding_dtype)], dim=-1)
+
+        # Final cast if dtype is specified and embedding is not already that dtype
+        if dtype is not None and embedding.dtype != dtype:
+            embedding = embedding.to(dtype)
+
         return embedding
 
     def forward(self, t):
-        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
-        t_freq = t_freq.to(self.mlp[0].weight.dtype)
+        # Determine the target dtype and device from the MLP layer
+        target_dtype = self.mlp[0].weight.dtype
+        target_device = self.mlp[0].weight.device # t should already be on this device from DiT forward pass
+
+        # Pass the target_dtype to timestep_embedding
+        # t is expected to be on the target_device already
+        t_freq = self.timestep_embedding(t.to(target_device), self.frequency_embedding_size, dtype=target_dtype)
+
+        # Ensure t_freq is on the correct device and dtype before MLP, though timestep_embedding should handle it.
+        # This is a safeguard.
+        if t_freq.dtype != target_dtype:
+            t_freq = t_freq.to(target_dtype)
+        if t_freq.device != target_device: # Should not happen if t was on target_device
+            t_freq = t_freq.to(target_device)
+
         t_emb = self.mlp(t_freq)
+
+        # Output t_emb should already be target_dtype due to MLP. This is a safeguard.
+        if t_emb.dtype != target_dtype:
+            t_emb = t_emb.to(target_dtype)
+
         return t_emb
 
 
