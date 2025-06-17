@@ -1,4 +1,6 @@
 from direct3d_s2.pipeline import Direct3DS2Pipeline
+import folder_paths
+import os
 
 
 class LoadDirect3DS2Model:
@@ -85,7 +87,7 @@ class SaveDirect3DS2Mesh:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "mesh_path": ("STRING", {"default": "output.obj"}),
+                "filename": ("STRING", {"default": "Direct3D_S2_mesh.obj"}),
                 "mesh": ("MESH",),
             }
         }
@@ -95,10 +97,25 @@ class SaveDirect3DS2Mesh:
     FUNCTION = "save"
     CATEGORY = "Direct3D‑S2"
 
-    def save(self, mesh_path, mesh):
+    def save(self, filename, mesh):
+        output_dir = folder_paths.get_output_directory()
+        base_name, extension = os.path.splitext(filename)
 
-        mesh.export(mesh_path)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        counter = 1
+        current_filename_to_check = filename
+        full_path = os.path.join(output_dir, current_filename_to_check)
+
+        actual_filename_for_saving = filename
+        while os.path.exists(full_path):
+            actual_filename_for_saving = f"{base_name}_{counter:03d}{extension}"
+            full_path = os.path.join(output_dir, actual_filename_for_saving)
+            counter += 1
+
+        mesh.export(full_path)
         
-        return ()
+        return { "ui": { "text": [f"Saved mesh as {actual_filename_for_saving} in ComfyUI output directory."] } }
 
 
