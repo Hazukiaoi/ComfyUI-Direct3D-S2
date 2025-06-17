@@ -23,39 +23,63 @@ class BiRefNet(object):
         ).to(self.device)
         self.birefnet_model.eval()
 
-    def run(self, image_arg): # Renamed input to image_arg to avoid confusion
+    def run(self, image_arg):
         self._load_model()
 
         pil_image = None
         if isinstance(image_arg, Image.Image):
             pil_image = image_arg
         elif isinstance(image_arg, torch.Tensor):
-            image_tensor = image_arg.cpu()
-            if image_tensor.ndim == 3 and image_tensor.shape[0] == 3: # CHW (e.g., float 0-1)
-                pil_image = transforms.ToPILImage()(image_tensor)
-            elif image_tensor.ndim == 3 and image_tensor.shape[0] == 4: # CHWA?
-                pil_image = transforms.ToPILImage()(image_tensor[:3,:,:]) # Take RGB from RGBA
-            elif image_tensor.ndim == 3 and image_tensor.shape[2] == 3 and image_tensor.dtype == torch.uint8: # HWC, uint8
-                pil_image = Image.fromarray(image_tensor.numpy())
-            elif image_tensor.ndim == 3 and image_tensor.shape[2] == 4 and image_tensor.dtype == torch.uint8: # HWCA, uint8
-                pil_image_rgba = Image.fromarray(image_tensor.numpy(), 'RGBA')
-                pil_image = pil_image_rgba.convert('RGB') # Explicitly convert here to handle alpha
+            image_tensor = image_arg.cpu() # Work with CPU tensor
+
+            if image_tensor.ndim == 4:
+                if image_tensor.shape[0] == 1: # Batch size 1
+                    squeezed_tensor = image_tensor.squeeze(0) # Shape [H, W, C] or [C, H, W]
+                    if squeezed_tensor.ndim == 3 and squeezed_tensor.shape[2] in [3, 4]: # HWC format [H, W, C]
+                        # Check if it's float (0-1) or uint8 (0-255) for HWC
+                        if squeezed_tensor.dtype == torch.uint8:
+                            pil_image = Image.fromarray(squeezed_tensor.numpy(), 'RGB' if squeezed_tensor.shape[2] == 3 else 'RGBA')
+                        else: # Assuming float tensor is CHW format for ToPILImage, so permute HWC to CHW
+                            chw_tensor = squeezed_tensor.permute(2, 0, 1) # Convert HWC to CHW [C, H, W]
+                            pil_image = transforms.ToPILImage()(chw_tensor)
+                    elif squeezed_tensor.ndim == 3 and squeezed_tensor.shape[0] in [3, 4]: # CHW format already [C, H, W]
+                        pil_image = transforms.ToPILImage()(squeezed_tensor)
+                    else:
+                        raise ValueError(f"Received a 4D Tensor (squeezed to 3D) in BiRefNet.run with unhandled shape: {squeezed_tensor.shape}")
+                else: # Batch size > 1
+                    raise ValueError(f"Received a 4D Tensor with batch size > 1 in BiRefNet.run, which is not supported: {image_tensor.shape}")
+            elif image_tensor.ndim == 3: # Handling for 3D tensors
+                if image_tensor.shape[0] in [3, 4]: # CHW format [C, H, W] (e.g., float 0-1 or uint8)
+                    pil_image = transforms.ToPILImage()(image_tensor)
+                elif image_tensor.shape[2] in [3, 4] and image_tensor.dtype == torch.uint8: # HWC format [H, W, C], uint8
+                    if image_tensor.shape[2] == 4: # HWCA
+                        pil_image = Image.fromarray(image_tensor.numpy(), 'RGBA')
+                    else: # HWC (RGB)
+                        pil_image = Image.fromarray(image_tensor.numpy(), 'RGB')
+                else: # Other 3D shapes/dtypes
+                    raise ValueError(f"Received a 3D Tensor in BiRefNet.run of unhandled shape/dtype: {image_tensor.shape}, dtype: {image_tensor.dtype}")
             elif image_tensor.ndim == 2: # Grayscale (H, W)
-                # ToPILImage expects CHW, so add channel dimension
-                pil_image = transforms.ToPILImage()(image_tensor.unsqueeze(0))
-            else:
-                raise ValueError(f"Received a Tensor in BiRefNet.run of unhandled shape/dtype: {image_tensor.shape}, dtype: {image_tensor.dtype}")
-        else:
+                pil_image = transforms.ToPILImage()(image_tensor.unsqueeze(0)) # Add channel dim for ToPILImage
+            else: # Other dimensions (e.g., 1D, >4D)
+                raise ValueError(f"Received a Tensor in BiRefNet.run with unhandled dimensions: {image_tensor.ndim}, shape: {image_tensor.shape}")
+        else: # Not PIL.Image and not torch.Tensor
             raise TypeError(f"BiRefNet.run received an unexpected image type: {type(image_arg)}")
 
-        if pil_image.mode == 'RGBA' or pil_image.mode == 'P': # P for paletted images
-             image_rgb = pil_image.convert('RGB')
-        elif pil_image.mode == 'L': # Grayscale
-             image_rgb = pil_image.convert('RGB') # Convert grayscale to RGB
-        else:
-             image_rgb = pil_image # Assume it's already RGB or a mode transformable
+        if pil_image is None:
+             raise RuntimeError("pil_image was not set, unexpected state in BiRefNet.run")
 
-        image_size = (1024, 1024) # Original line
+        if pil_image.mode == 'RGBA' or pil_image.mode == 'P' or pil_image.mode == 'L' or pil_image.mode == 'CMYK' or pil_image.mode == 'YCbCr':
+             image_rgb = pil_image.convert('RGB')
+        elif pil_image.mode == 'RGB':
+             image_rgb = pil_image
+        else:
+             try:
+                 image_rgb = pil_image.convert('RGB')
+             except Exception as e:
+                 raise ValueError(f"Could not convert PIL image mode '{pil_image.mode}' to RGB in BiRefNet.run. Error: {e}")
+
+
+        image_size = (1024, 1024)
 
         transform_image = transforms.Compose([
             transforms.Resize(image_size),
