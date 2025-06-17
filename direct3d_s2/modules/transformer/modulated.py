@@ -2,7 +2,7 @@ from typing import *
 import torch
 import torch.nn as nn
 from ..attention import MultiHeadAttention
-from ..norm import LayerNorm32
+from ..norm import LayerNorm # Changed from LayerNorm32
 from .blocks import FeedForwardNet
 
 
@@ -27,8 +27,8 @@ class ModulatedTransformerBlock(nn.Module):
         super().__init__()
         self.use_checkpoint = use_checkpoint
         self.share_mod = share_mod
-        self.norm1 = LayerNorm32(channels, elementwise_affine=False, eps=1e-6)
-        self.norm2 = LayerNorm32(channels, elementwise_affine=False, eps=1e-6)
+        self.norm1 = LayerNorm(channels, elementwise_affine=False, eps=1e-6) # Changed from LayerNorm32
+        self.norm2 = LayerNorm(channels, elementwise_affine=False, eps=1e-6) # Changed from LayerNorm32
         self.attn = MultiHeadAttention(
             channels,
             num_heads=num_heads,
@@ -96,9 +96,9 @@ class ModulatedTransformerCrossBlock(nn.Module):
         super().__init__()
         self.use_checkpoint = use_checkpoint
         self.share_mod = share_mod
-        self.norm1 = LayerNorm32(channels, elementwise_affine=False, eps=1e-6)
-        self.norm2 = LayerNorm32(channels, elementwise_affine=True, eps=1e-6)
-        self.norm3 = LayerNorm32(channels, elementwise_affine=False, eps=1e-6)
+        self.norm1 = LayerNorm(channels, elementwise_affine=False, eps=1e-6) # Changed from LayerNorm32
+        self.norm2 = LayerNorm(channels, elementwise_affine=True, eps=1e-6) # Changed from LayerNorm32
+        self.norm3 = LayerNorm(channels, elementwise_affine=False, eps=1e-6) # Changed from LayerNorm32
         self.self_attn = MultiHeadAttention(
             channels,
             num_heads=num_heads,
