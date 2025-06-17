@@ -8,10 +8,11 @@ from omegaconf import OmegaConf
 from huggingface_hub import hf_hub_download
 from typing import Union, List, Optional
 from direct3d_s2.modules import sparse as sp
+from direct3d_s2.utils.rembg import BiRefNet
 from direct3d_s2.utils import (
-    instantiate_from_config, 
-    preprocess_image, 
-    sort_block, 
+    instantiate_from_config,
+    preprocess_image,
+    sort_block,
     extract_tokens_and_coords,
     normalize_mesh,
     mesh2index,
@@ -34,6 +35,7 @@ class Direct3DS2Pipeline(object):
                  sparse_scheduler_512,
                  sparse_scheduler_1024,
                  dtype=torch.float16,
+                 birefnet_model_path=None,
         ):
         self.dense_vae = dense_vae
         self.dense_dit = dense_dit
@@ -48,6 +50,8 @@ class Direct3DS2Pipeline(object):
         self.sparse_scheduler_512 = sparse_scheduler_512
         self.sparse_scheduler_1024 = sparse_scheduler_1024
         self.dtype = dtype
+        self.birefnet_model_path = birefnet_model_path
+        self.birefnet_instance = None
     
     def to(self, device):
         self.device = torch.device(device)
@@ -60,9 +64,10 @@ class Direct3DS2Pipeline(object):
         self.refiner.to(device)
         self.dense_image_encoder.to(device)
         self.sparse_image_encoder.to(device)
+        # self.birefnet_instance should be initialized with model_path, so device is set there.
 
     @classmethod
-    def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1"):
+    def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1", birefnet_model_path=None):
         
         if os.path.isdir(pipeline_path):
             config_path = os.path.join(pipeline_path, 'config.yaml')
@@ -153,17 +158,22 @@ class Direct3DS2Pipeline(object):
             sparse_scheduler_512=sparse_scheduler_512,
             sparse_scheduler_1024=sparse_scheduler_1024,
             refiner=refiner,
+            birefnet_model_path=birefnet_model_path,
         )
 
     def preprocess(self, image):
         if image.mode == 'RGBA':
-            image = np.array(image)
+            image_np = np.array(image)
+            image = preprocess_image(image_np)
         else:
-            if getattr(self, 'birefnet_model', None) is None:
-                from direct3d_s2.utils import BiRefNet
-                self.birefnet_model = BiRefNet(self.device)
-            image = self.birefnet_model.run(image)
-        image = preprocess_image(image)
+            if not self.birefnet_model_path:
+                raise ValueError("Input image is not RGBA and no BiRefNet model path was provided. Please specify it in the LoadDirect3DS2Model node.")
+            if self.birefnet_instance is None or \
+               self.birefnet_instance.model_path != self.birefnet_model_path:
+                self.birefnet_instance = BiRefNet(self.device, model_path=self.birefnet_model_path)
+
+            image_np = self.birefnet_instance.run(image)
+            image = preprocess_image(image_np)
         return image
 
     def prepare_image(self, image: Union[str, List[str], Image.Image, List[Image.Image]]):

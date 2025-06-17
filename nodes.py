@@ -9,6 +9,7 @@ class LoadDirect3DS2Model:
                 "model_path": ("STRING", {"default": "wushuang98/Direct3D-S2"}),
                 "subfolder_path": ("STRING", {"default": "direct3d-s2-v-1-1"}),
                 "device": (["cuda", "cpu"], {"default": "cuda"}),
+                "birefnet_model_path": ("STRING", {"default": ""}),
             }
         }
 
@@ -17,10 +18,11 @@ class LoadDirect3DS2Model:
     FUNCTION = "load_model"
     CATEGORY = "Direct3D‑S2"
 
-    def load_model(self, model_path, subfolder_path, device):
+    def load_model(self, model_path, subfolder_path, device, birefnet_model_path):
         pipeline = Direct3DS2Pipeline.from_pretrained(
           model_path, 
-          subfolder=subfolder_path
+          subfolder=subfolder_path,
+          birefnet_model_path=birefnet_model_path
         )
         pipeline.to(device)
         model = pipeline

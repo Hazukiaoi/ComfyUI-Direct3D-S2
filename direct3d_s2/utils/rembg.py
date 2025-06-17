@@ -4,16 +4,26 @@ from torchvision import transforms
 
 
 class BiRefNet(object):
-    def __init__(self, device):
+    def __init__(self, device, model_path=None):
+        self.device = device
+        self.model_path = model_path
+        self.birefnet_model = None
+
+    def _load_model(self):
+        if self.birefnet_model is not None:
+            return
+        if not self.model_path:
+            raise ValueError("BiRefNet model path not provided or empty.")
+
         from transformers import AutoModelForImageSegmentation
         self.birefnet_model = AutoModelForImageSegmentation.from_pretrained(
-            'ZhengPeng7/BiRefNet',
+            self.model_path,
             trust_remote_code=True,
-        ).to(device)
+        ).to(self.device)
         self.birefnet_model.eval()
-        self.device = device
 
     def run(self, image):
+        self._load_model()
         image = image.convert('RGB')
         image_size = (1024, 1024)
         transform_image = transforms.Compose([
