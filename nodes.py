@@ -1,6 +1,7 @@
 from direct3d_s2.pipeline import Direct3DS2Pipeline
 import folder_paths
 import os
+import torch
 
 
 class LoadDirect3DS2Model:
@@ -60,6 +61,7 @@ class Direct3DS2:
                 "image": ("IMAGE",),
                 "sdf_resolution": ("INT", {"default": 1024}),
                 "remesh": ("BOOLEAN", {"default": False}),
+                "release_models": ("BOOLEAN", {"default": True}),
             }
         }
 
@@ -68,15 +70,33 @@ class Direct3DS2:
     FUNCTION = "generate"
     CATEGORY = "Direct3D‑S2"
 
-    def generate(self, model, image, sdf_resolution, remesh):
+    def generate(self, model, image, sdf_resolution, remesh, release_models):
         pipeline = model
+        # pipeline.device should ideally be the intended execution device (e.g., 'cuda' or 'cpu')
+        # as set by LoadDirect3DS2Model.
         
-        mesh = pipeline(
-          image, 
-          sdf_resolution=sdf_resolution, # 512 or 1024
-          remesh=remesh, # Switch to True if you need to reduce the number of triangles.
-        )["mesh"]
-        
+        try:
+            # Ensure models are on the intended execution device.
+            # This call will move them from CPU to GPU if they were offloaded by a previous run.
+            print(f"Direct3DS2 node: Ensuring models are on device: {pipeline.device}")
+            pipeline.to(pipeline.device)
+
+            mesh_output = pipeline(
+              image,
+              sdf_resolution=sdf_resolution,
+              remesh=remesh,
+            )
+            mesh = mesh_output["mesh"]
+
+        finally:
+            if release_models:
+                print("Direct3DS2 node: Releasing models to CPU.")
+                pipeline.models_to_cpu()
+
+            if torch.cuda.is_available():
+                print("Direct3DS2 node: Clearing CUDA cache.")
+                torch.cuda.empty_cache()
+
         return (mesh,)
 
 

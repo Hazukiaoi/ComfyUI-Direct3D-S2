@@ -52,19 +52,47 @@ class Direct3DS2Pipeline(object):
         self.dtype = dtype
         self.birefnet_model_path = birefnet_model_path
         self.birefnet_instance = None
+        self.models_are_offloaded = False
     
     def to(self, device):
-        self.device = torch.device(device)
-        self.dense_vae.to(device)
-        self.dense_dit.to(device)
-        self.sparse_vae_512.to(device)
-        self.sparse_dit_512.to(device)
-        self.sparse_vae_1024.to(device)
-        self.sparse_dit_1024.to(device)
-        self.refiner.to(device)
-        self.dense_image_encoder.to(device)
-        self.sparse_image_encoder.to(device)
-        # self.birefnet_instance should be initialized with model_path, so device is set there.
+        target_device = torch.device(device)
+        self.device = target_device
+        self.models_are_offloaded = (target_device.type == 'cpu')
+        self.dense_vae.to(target_device)
+        self.dense_dit.to(target_device)
+        self.sparse_vae_512.to(target_device)
+        self.sparse_dit_512.to(target_device)
+        self.sparse_vae_1024.to(target_device)
+        self.sparse_dit_1024.to(target_device)
+        self.refiner.to(target_device)
+        self.dense_image_encoder.to(target_device)
+        self.sparse_image_encoder.to(target_device)
+
+        if hasattr(self, 'birefnet_instance') and self.birefnet_instance is not None:
+            if hasattr(self.birefnet_instance, 'birefnet_model') and self.birefnet_instance.birefnet_model is not None:
+                self.birefnet_instance.birefnet_model.to(target_device)
+            self.birefnet_instance.device = target_device
+
+    def models_to_cpu(self):
+        models_to_move = [
+            self.dense_vae, self.dense_dit,
+            self.sparse_vae_512, self.sparse_dit_512,
+            self.sparse_vae_1024, self.sparse_dit_1024,
+            self.refiner,
+            self.dense_image_encoder, self.sparse_image_encoder
+        ]
+        for model in models_to_move:
+            if model is not None:
+                model.to('cpu')
+
+        if hasattr(self, 'birefnet_instance') and self.birefnet_instance is not None and \
+           hasattr(self.birefnet_instance, 'birefnet_model') and self.birefnet_instance.birefnet_model is not None:
+            self.birefnet_instance.birefnet_model.to('cpu')
+            if hasattr(self.birefnet_instance, 'device'):
+                 self.birefnet_instance.device = torch.device('cpu')
+
+        self.models_are_offloaded = True
+        print("Direct3DS2Pipeline models moved to CPU.")
 
     @classmethod
     def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1", birefnet_model_path=None):
