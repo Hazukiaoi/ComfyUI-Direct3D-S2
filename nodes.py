@@ -13,7 +13,6 @@ class LoadDirect3DS2Model:
                 "subfolder_path": ("STRING", {"default": "direct3d-s2-v-1-1"}),
                 "device": (["cuda", "cpu"], {"default": "cuda"}),
                 "birefnet_model_path": ("STRING", {"default": ""}),
-                "precision": (["fp32", "fp16", "bf16", "fp8_e4m3fn"], {"default": "fp32"}),
             }
         }
 
@@ -22,14 +21,14 @@ class LoadDirect3DS2Model:
     FUNCTION = "load_model"
     CATEGORY = "Direct3D‑S2"
 
-    def load_model(self, model_path, subfolder_path, device, birefnet_model_path, precision):
+    def load_model(self, model_path, subfolder_path, device, birefnet_model_path): # Removed precision
         pipeline = Direct3DS2Pipeline.from_pretrained(
           model_path, 
           subfolder=subfolder_path,
           birefnet_model_path=birefnet_model_path
         )
 
-        pipeline.convert_model_precision(precision)
+        # Removed: pipeline.convert_model_precision(precision)
 
         pipeline.to(device)
         model = pipeline

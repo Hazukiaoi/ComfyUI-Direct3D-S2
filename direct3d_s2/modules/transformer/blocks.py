@@ -2,7 +2,7 @@ from typing import *
 import torch
 import torch.nn as nn
 from ..attention import MultiHeadAttention
-from ..norm import LayerNorm # Changed from LayerNorm32
+from ..norm import LayerNorm32 # Reverted
 
 
 class AbsolutePositionEmbedder(nn.Module):
@@ -81,8 +81,8 @@ class TransformerBlock(nn.Module):
     ):
         super().__init__()
         self.use_checkpoint = use_checkpoint
-        self.norm1 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm2 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
+        self.norm1 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm2 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
         self.attn = MultiHeadAttention(
             channels,
             num_heads=num_heads,
@@ -136,9 +136,9 @@ class TransformerCrossBlock(nn.Module):
     ):
         super().__init__()
         self.use_checkpoint = use_checkpoint
-        self.norm1 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm2 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm3 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
+        self.norm1 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm2 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm3 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
         self.self_attn = MultiHeadAttention(
             channels,
             num_heads=num_heads,

@@ -5,7 +5,7 @@ from ..basic import SparseTensor
 from ..linear import SparseLinear
 from ..nonlinearity import SparseGELU
 from ..attention import SparseMultiHeadAttention, SerializeMode
-from ...norm import LayerNorm # Changed from LayerNorm32
+from ...norm import LayerNorm32 # Reverted
 
 
 class SparseFeedForwardNet(nn.Module):
@@ -43,8 +43,8 @@ class SparseTransformerBlock(nn.Module):
     ):
         super().__init__()
         self.use_checkpoint = use_checkpoint
-        self.norm1 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm2 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
+        self.norm1 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm2 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
         self.attn = SparseMultiHeadAttention(
             channels,
             num_heads=num_heads,
@@ -102,9 +102,9 @@ class SparseTransformerCrossBlock(nn.Module):
     ):
         super().__init__()
         self.use_checkpoint = use_checkpoint
-        self.norm1 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm2 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
-        self.norm3 = LayerNorm(channels, elementwise_affine=ln_affine, eps=1e-6) # Changed from LayerNorm32
+        self.norm1 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm2 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
+        self.norm3 = LayerNorm32(channels, elementwise_affine=ln_affine, eps=1e-6) # Reverted
         self.self_attn = SparseMultiHeadAttention(
             channels,
             num_heads=num_heads,
